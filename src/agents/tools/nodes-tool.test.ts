@@ -131,4 +131,128 @@ describe("createNodesTool screen_record duration guardrails", () => {
     });
     expect(prepareCall?.params).not.toHaveProperty("rawCommand");
   });
+
+  it("uses two-phase exec approvals for node run retries", async () => {
+    nodeUtilsMocks.listNodes.mockResolvedValue([
+      {
+        nodeId: "node-1",
+        commands: ["system.run"],
+      },
+    ]);
+    gatewayMocks.callGatewayTool.mockImplementation(async (method, _opts, payload, extra) => {
+      if (method === "node.invoke" && payload?.command === "system.run.prepare") {
+        return {
+          payload: {
+            cmdText: "echo hi",
+            plan: {
+              argv: ["bash", "-lc", "echo hi"],
+              cwd: null,
+              rawCommand: null,
+              agentId: null,
+              sessionKey: null,
+            },
+          },
+        };
+      }
+      if (
+        method === "node.invoke" &&
+        payload?.command === "system.run" &&
+        !payload?.params?.runId
+      ) {
+        throw new Error("SYSTEM_RUN_DENIED: approval required");
+      }
+      if (method === "exec.approval.request") {
+        expect(payload).toMatchObject({
+          id: expect.any(String),
+          command: "echo hi",
+          commandArgv: ["bash", "-lc", "echo hi"],
+          host: "node",
+          nodeId: "node-1",
+          twoPhase: true,
+        });
+        expect(extra).toEqual({ expectFinal: false });
+        return {
+          id: "approval-1",
+          status: "accepted",
+        };
+      }
+      if (method === "exec.approval.waitDecision") {
+        expect(payload).toEqual({ id: "approval-1" });
+        return { decision: "allow-always" };
+      }
+      if (method === "node.invoke" && payload?.command === "system.run") {
+        expect(payload?.params).toMatchObject({
+          runId: "approval-1",
+          approved: true,
+          approvalDecision: "allow-always",
+        });
+        return { payload: { ok: true } };
+      }
+      throw new Error(`unexpected call: ${String(method)}`);
+    });
+    const tool = createNodesTool();
+
+    await tool.execute("call-1", {
+      action: "run",
+      node: "macbook",
+      command: ["bash", "-lc", "echo hi"],
+    });
+  });
+
+  it("surfaces approval timeout when waitDecision expires", async () => {
+    nodeUtilsMocks.listNodes.mockResolvedValue([
+      {
+        nodeId: "node-1",
+        commands: ["system.run"],
+      },
+    ]);
+    gatewayMocks.callGatewayTool.mockImplementation(async (method, _opts, payload, extra) => {
+      if (method === "node.invoke" && payload?.command === "system.run.prepare") {
+        return {
+          payload: {
+            cmdText: "echo hi",
+            plan: {
+              argv: ["bash", "-lc", "echo hi"],
+              cwd: null,
+              rawCommand: null,
+              agentId: null,
+              sessionKey: null,
+            },
+          },
+        };
+      }
+      if (
+        method === "node.invoke" &&
+        payload?.command === "system.run" &&
+        !payload?.params?.runId
+      ) {
+        throw new Error("SYSTEM_RUN_DENIED: approval required");
+      }
+      if (method === "exec.approval.request") {
+        expect(extra).toEqual({ expectFinal: false });
+        return {
+          id: "approval-timeout",
+          status: "accepted",
+        };
+      }
+      if (method === "exec.approval.waitDecision") {
+        throw new Error("approval expired or not found");
+      }
+      throw new Error(`unexpected call: ${String(method)}`);
+    });
+    const tool = createNodesTool();
+
+    await expect(
+      tool.execute("call-1", {
+        action: "run",
+        node: "macbook",
+        command: ["bash", "-lc", "echo hi"],
+      }),
+    ).rejects.toThrow("exec denied: approval timed out");
+
+    const approvedRetryCall = gatewayMocks.callGatewayTool.mock.calls.find(
+      (call) => call[0] === "node.invoke" && call[2]?.params?.runId === "approval-timeout",
+    );
+    expect(approvedRetryCall).toBeUndefined();
+  });
 });

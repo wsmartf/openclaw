@@ -18,6 +18,35 @@ export type TelegramSequentialKeyContext = {
   };
 };
 
+function isApprovalRequestText(rawText: string | undefined, botUsername?: string): boolean {
+  if (typeof rawText !== "string") {
+    return false;
+  }
+  const trimmed = rawText.trim();
+  if (!trimmed.startsWith("/")) {
+    return false;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower === "/approve") {
+    return true;
+  }
+  if (lower.startsWith("/approve ")) {
+    return true;
+  }
+  if (!botUsername) {
+    return false;
+  }
+  const lowerBotUsername = botUsername.trim().toLowerCase();
+  if (!lowerBotUsername) {
+    return false;
+  }
+  return (
+    lower.startsWith(`/approve@${lowerBotUsername}`) &&
+    (lower.length === `/approve@${lowerBotUsername}`.length ||
+      /\s/.test(lower.charAt(`/approve@${lowerBotUsername}`.length)))
+  );
+}
+
 export function getTelegramSequentialKey(ctx: TelegramSequentialKeyContext): string {
   const reaction = ctx.update?.message_reaction;
   if (reaction?.chat?.id) {
@@ -35,7 +64,10 @@ export function getTelegramSequentialKey(ctx: TelegramSequentialKeyContext): str
   const chatId = msg?.chat?.id ?? ctx.chat?.id;
   const rawText = msg?.text ?? msg?.caption;
   const botUsername = ctx.me?.username;
-  if (isAbortRequestText(rawText, botUsername ? { botUsername } : undefined)) {
+  if (
+    isAbortRequestText(rawText, botUsername ? { botUsername } : undefined) ||
+    isApprovalRequestText(rawText, botUsername)
+  ) {
     if (typeof chatId === "number") {
       return `telegram:${chatId}:control`;
     }

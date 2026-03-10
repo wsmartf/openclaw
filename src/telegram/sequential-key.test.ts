@@ -1,4 +1,4 @@
-import type { Chat, Message } from "@grammyjs/types";
+import type { Chat, Message, UserFromGetMe } from "@grammyjs/types";
 import { describe, expect, it } from "vitest";
 import { getTelegramSequentialKey } from "./sequential-key.js";
 
@@ -10,6 +10,19 @@ const mockMessage = (message: Pick<Message, "chat"> & Partial<Message>): Message
     date: 0,
     ...message,
   }) as Message;
+const mockMe = (me: Partial<UserFromGetMe>): UserFromGetMe =>
+  ({
+    id: 1,
+    is_bot: true,
+    first_name: "OpenClaw",
+    username: "openclaw_bot",
+    can_join_groups: true,
+    can_read_all_group_messages: false,
+    supports_inline_queries: false,
+    can_connect_to_business: false,
+    has_main_web_app: false,
+    ...me,
+  }) as UserFromGetMe;
 
 describe("getTelegramSequentialKey", () => {
   it.each([
@@ -58,6 +71,35 @@ describe("getTelegramSequentialKey", () => {
     [
       { message: mockMessage({ chat: mockChat({ id: 123 }), text: "/stop" }) },
       "telegram:123:control",
+    ],
+    [
+      { message: mockMessage({ chat: mockChat({ id: 123 }), text: "/approve" }) },
+      "telegram:123:control",
+    ],
+    [
+      { message: mockMessage({ chat: mockChat({ id: 123 }), text: "/approve allow-always abc" }) },
+      "telegram:123:control",
+    ],
+    [
+      {
+        me: mockMe({ username: "openclaw_bot" }),
+        message: mockMessage({
+          chat: mockChat({ id: 123 }),
+          text: "/approve@openclaw_bot allow-once abc",
+        }),
+      },
+      "telegram:123:control",
+    ],
+    [{ message: mockMessage({ chat: mockChat({ id: 123 }), text: "/approved" }) }, "telegram:123"],
+    [
+      {
+        me: mockMe({ username: "openclaw_bot" }),
+        message: mockMessage({
+          chat: mockChat({ id: 123 }),
+          text: "/approve@other_bot allow-once abc",
+        }),
+      },
+      "telegram:123",
     ],
     [{ message: mockMessage({ chat: mockChat({ id: 123 }), text: "/status" }) }, "telegram:123"],
     [
