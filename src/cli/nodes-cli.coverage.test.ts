@@ -276,11 +276,11 @@ describe("nodes-cli coverage", () => {
     expect(nodeInvokeCalls.filter((call) => call.params?.command === "system.run")).toHaveLength(1);
 
     const approval = getApprovalRequestCall();
-    expect(approval?.params?.["commandArgv"]).toEqual(["echo", "hi"]);
     expect(approval?.params?.["systemRunPlan"]).toEqual({
       argv: ["echo", "hi"],
       cwd: null,
-      rawCommand: null,
+      commandText: "echo hi",
+      commandPreview: null,
       agentId: "main",
       sessionKey: null,
     });
