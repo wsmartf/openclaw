@@ -396,30 +396,66 @@ export function registerNodesInvokeCommands(nodes: Command) {
           if (approvals.hostSecurity === "deny") {
             throw new Error("exec denied: host=node security=deny");
           }
-          const approvalResult = await maybeRequestNodesRunApproval({
-            opts,
-            nodeId,
-            agentId,
-            approvalPlan,
-            hostSecurity: approvals.hostSecurity,
-            hostAsk: approvals.hostAsk,
-            askFallback: approvals.askFallback,
-          });
-          const invokeParams = buildSystemRunInvokeParams({
-            nodeId,
-            approvalPlan,
-            nodeEnv: preparedContext.nodeEnv,
-            timeoutMs: preparedContext.timeoutMs,
-            invokeTimeout: preparedContext.invokeTimeout,
-            approvedByAsk: approvalResult.approvedByAsk,
-            approvalDecision: approvalResult.approvalDecision,
-            approvalId: approvalResult.approvalId,
-            idempotencyKey: opts.idempotencyKey,
-            fallbackAgentId: agentId,
-            needsScreenRecording: opts.needsScreenRecording === true,
-          });
+          let approvalResult: Awaited<ReturnType<typeof maybeRequestNodesRunApproval>> = {
+            approvedByAsk: false,
+            approvalDecision: null,
+            approvalId: null,
+          };
+          let promptedForApproval = false;
+          if (approvals.hostAsk === "always") {
+            approvalResult = await maybeRequestNodesRunApproval({
+              opts,
+              nodeId,
+              agentId,
+              approvalPlan,
+              hostSecurity: approvals.hostSecurity,
+              hostAsk: approvals.hostAsk,
+              askFallback: approvals.askFallback,
+            });
+            promptedForApproval = true;
+          }
 
-          const result = await callGatewayCli("node.invoke", opts, invokeParams);
+          const invokeSystemRun = async () => {
+            const invokeParams = buildSystemRunInvokeParams({
+              nodeId,
+              approvalPlan,
+              nodeEnv: preparedContext.nodeEnv,
+              timeoutMs: preparedContext.timeoutMs,
+              invokeTimeout: preparedContext.invokeTimeout,
+              approvedByAsk: approvalResult.approvedByAsk,
+              approvalDecision: approvalResult.approvalDecision,
+              approvalId: approvalResult.approvalId,
+              idempotencyKey: opts.idempotencyKey,
+              fallbackAgentId: agentId,
+              needsScreenRecording: opts.needsScreenRecording === true,
+            });
+            return await callGatewayCli("node.invoke", opts, invokeParams);
+          };
+
+          let result: unknown;
+          try {
+            result = await invokeSystemRun();
+          } catch (firstErr) {
+            const message = firstErr instanceof Error ? firstErr.message : String(firstErr);
+            const shouldPromptOnMiss =
+              !promptedForApproval &&
+              approvals.hostAsk === "on-miss" &&
+              message.includes("SYSTEM_RUN_DENIED: approval required");
+            if (!shouldPromptOnMiss) {
+              throw firstErr;
+            }
+            approvalResult = await maybeRequestNodesRunApproval({
+              opts,
+              nodeId,
+              agentId,
+              approvalPlan,
+              hostSecurity: approvals.hostSecurity,
+              hostAsk: approvals.hostAsk,
+              askFallback: approvals.askFallback,
+            });
+            promptedForApproval = true;
+            result = await invokeSystemRun();
+          }
           if (opts.json) {
             defaultRuntime.writeJson(result);
             return;

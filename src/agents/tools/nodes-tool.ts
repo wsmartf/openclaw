@@ -713,11 +713,16 @@ export function createNodesTool(options?: {
             // the gateway and wait for the user to approve/deny via the UI.
             const APPROVAL_TIMEOUT_MS = 120_000;
             const approvalId = crypto.randomUUID();
-            const approvalResult = await callGatewayTool(
+            const approvalRegistration = await callGatewayTool<{
+              id?: unknown;
+              decision?: unknown;
+            }>(
               "exec.approval.request",
               { ...gatewayOpts, timeoutMs: APPROVAL_TIMEOUT_MS + 5_000 },
               {
                 id: approvalId,
+                command: prepared.plan.commandPreview ?? prepared.plan.commandText,
+                commandArgv: prepared.plan.argv,
                 systemRunPlan: prepared.plan,
                 cwd: prepared.plan.cwd ?? cwd,
                 nodeId,
@@ -729,12 +734,35 @@ export function createNodesTool(options?: {
                 turnSourceAccountId,
                 turnSourceThreadId,
                 timeoutMs: APPROVAL_TIMEOUT_MS,
+                twoPhase: true,
               },
+              { expectFinal: false },
             );
-            const decisionRaw =
-              approvalResult && typeof approvalResult === "object"
-                ? (approvalResult as { decision?: unknown }).decision
+            const registeredApprovalId =
+              approvalRegistration && typeof approvalRegistration.id === "string"
+                ? approvalRegistration.id
+                : approvalId;
+            let decisionRaw =
+              approvalRegistration && typeof approvalRegistration === "object"
+                ? approvalRegistration.decision
                 : undefined;
+            if (decisionRaw === undefined) {
+              try {
+                const approvalDecisionResult = await callGatewayTool<{ decision?: unknown }>(
+                  "exec.approval.waitDecision",
+                  { ...gatewayOpts, timeoutMs: APPROVAL_TIMEOUT_MS + 5_000 },
+                  { id: registeredApprovalId },
+                );
+                decisionRaw = approvalDecisionResult?.decision;
+              } catch (waitErr) {
+                const waitMessage = String(waitErr).toLowerCase();
+                if (waitMessage.includes("approval expired or not found")) {
+                  decisionRaw = null;
+                } else {
+                  throw waitErr;
+                }
+              }
+            }
             const approvalDecision =
               decisionRaw === "allow-once" || decisionRaw === "allow-always" ? decisionRaw : null;
 
@@ -754,7 +782,7 @@ export function createNodesTool(options?: {
               command: "system.run",
               params: {
                 ...runParams,
-                runId: approvalId,
+                runId: registeredApprovalId,
                 approved: true,
                 approvalDecision,
               },
