@@ -95,6 +95,36 @@ describe("getTelegramSequentialKey", () => {
       },
       "telegram:123:control",
     ],
+    [
+      {
+        me: mockMe({ username: "openclaw_bot" }),
+        update: {
+          callback_query: {
+            data: "/approve abc12345 allow-once",
+            message: mockMessage({
+              chat: mockChat({ id: 123, type: "private" }),
+              text: "Approval required.",
+            }),
+          },
+        },
+      },
+      "telegram:123:control",
+    ],
+    [
+      {
+        me: mockMe({ username: "openclaw_bot" }),
+        update: {
+          callback_query: {
+            data: "/approve@openclaw_bot abc12345 allow-once",
+            message: mockMessage({
+              chat: mockChat({ id: 123, type: "private" }),
+              text: "Approval required.",
+            }),
+          },
+        },
+      },
+      "telegram:123:control",
+    ],
     [{ message: mockMessage({ chat: mockChat({ id: 123 }), text: "/approved" }) }, "telegram:123"],
     [
       {
@@ -103,6 +133,21 @@ describe("getTelegramSequentialKey", () => {
           chat: mockChat({ id: 123 }),
           text: "/approve@other_bot abc12345 allow-once",
         }),
+      },
+      "telegram:123",
+    ],
+    [
+      {
+        me: mockMe({ username: "openclaw_bot" }),
+        update: {
+          callback_query: {
+            data: "/approve@other_bot abc12345 allow-once",
+            message: mockMessage({
+              chat: mockChat({ id: 123, type: "private" }),
+              text: "Approval required.",
+            }),
+          },
+        },
       },
       "telegram:123",
     ],

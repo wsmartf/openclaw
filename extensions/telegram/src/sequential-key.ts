@@ -14,7 +14,7 @@ export type TelegramSequentialKeyContext = {
     edited_message?: Message;
     channel_post?: Message;
     edited_channel_post?: Message;
-    callback_query?: { message?: Message };
+    callback_query?: { message?: Message; data?: string };
     message_reaction?: { chat?: { id?: number } };
   };
 };
@@ -53,6 +53,7 @@ export function getTelegramSequentialKey(ctx: TelegramSequentialKeyContext): str
   if (reaction?.chat?.id) {
     return `telegram:${reaction.chat.id}`;
   }
+  const callbackData = ctx.update?.callback_query?.data;
   const msg =
     ctx.message ??
     ctx.channelPost ??
@@ -66,6 +67,7 @@ export function getTelegramSequentialKey(ctx: TelegramSequentialKeyContext): str
   const rawText = msg?.text ?? msg?.caption;
   const botUsername = ctx.me?.username;
   if (
+    isApprovalRequestText(callbackData, botUsername) ||
     isAbortRequestText(rawText, botUsername ? { botUsername } : undefined) ||
     isApprovalRequestText(rawText, botUsername)
   ) {
